@@ -176,6 +176,7 @@ class ConnectedLineSensor(AsteriskDeviceEntity, SensorEntity):
         self._name = f"{device['extension']} Connected Line"
         self._state = "None"
         self._extra_attributes = {}
+        self._device_filter = f"{device['tech']}/{device['extension']}"
         self._ami_client.add_event_listener(
             self.handle_new_connected_line,
             white_list=["NewConnectedLine"],
@@ -206,6 +207,27 @@ class ConnectedLineSensor(AsteriskDeviceEntity, SensorEntity):
             white_list=["Newchannel"],
             ConnectedLineNum=device["extension"],
         )
+        self._ami_client.add_event_listener(
+            self.handle_device_state_change,
+            white_list=["DeviceStateChange"],
+        )
+
+    def handle_device_state_change(self, event: AMIEvent):
+        """Handle device state change to reset connected line when idle."""
+        device = event.get("Device", "")
+        state = event.get("State", "")
+    
+        # Only process events for our device
+        if device != self._device_filter:
+            return
+    
+        # Reset connected line if the device is no longer in use
+        if state in ("NOT_INUSE", "IDLE") or state.lower() in ("not in use", "idle"):
+            self._state = "None"
+            self._extra_attributes = {}
+            self._schedule_update()
+            _LOGGER.debug("Reset connected line for %s due to state change to %s", 
+                         self._device["extension"], state)
 
     def handle_new_connected_line(self, event: AMIEvent):
         """Handle an NewConnectedLine event."""
